@@ -320,8 +320,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     <div style='font-size:0.7rem;color:#888;line-height:1.6'>
-    Built for Connecting Dreams Foundation<br>
-    Round 2 Assignment · June 2026
+    <br>
+    
     </div>
     """, unsafe_allow_html=True)
 
