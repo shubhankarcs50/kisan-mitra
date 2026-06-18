@@ -139,7 +139,7 @@ def get_client():
     return genai.Client(api_key=key)
 
 client = get_client()
-MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-3.5-flash"
 
 # ── System prompts ────────────────────────────────────────────────────────────
 DISEASE_PROMPT = """You are Kisan Mitra, a trusted natural farming advisor for Indian farmers transitioning to organic agriculture.
@@ -208,11 +208,16 @@ def speak(text: str) -> str:
     """Convert text to Hindi TTS, return base64 mp3."""
     try:
         clean = clean_for_tts(text)[:600]
-        tts = gTTS(text=clean, lang='hi', slow=False)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-            tts.save(f.name)
-            return base64.b64encode(open(f.name, "rb").read()).decode()
-    except Exception:
+        if not clean.strip():
+            return ""
+        tts = gTTS(text=clean, lang='hi', slow=False, tld='co.in')
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tts.save(tmp.name)
+        tmp.close()
+        with open(tmp.name, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception as e:
+        st.warning(f"⚠️ Voice output unavailable: {e}")
         return ""
 
 def play_audio(b64: str):
@@ -320,8 +325,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     <div style='font-size:0.7rem;color:#888;line-height:1.6'>
-    <br>
-    
+    Built for Connecting Dreams Foundation<br>
+    Round 2 Assignment · June 2026
     </div>
     """, unsafe_allow_html=True)
 
@@ -406,13 +411,82 @@ for msg in st.session_state.messages:
         </div>''', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Input row
+# ── Voice Input via Web Speech API ───────────────────────────────────────────
 st.markdown("---")
+st.markdown('<div class="slabel">Awaaz se poochein ya likhein</div>', unsafe_allow_html=True)
+
+# Inject mic button + Web Speech API JS
+st.markdown("""
+<div style="display:flex; gap:10px; align-items:center; margin-bottom:0.5rem">
+  <button id="micBtn" onclick="startListening()" style="
+      background:#1D9E75; color:white; border:none;
+      border-radius:50%; width:48px; height:48px;
+      font-size:20px; cursor:pointer; flex-shrink:0;
+      box-shadow: 0 2px 8px rgba(29,158,117,0.4)">
+    🎤
+  </button>
+  <div id="micStatus" style="font-size:0.82rem; color:#0f6e56;">
+    Mic button dabayein aur bolein...
+  </div>
+</div>
+
+<script>
+let recognition;
+function startListening() {
+    const btn = document.getElementById('micBtn');
+    const status = document.getElementById('micStatus');
+
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        status.innerText = '❌ Aapka browser voice support nahi karta. Chrome use karein.';
+        return;
+    }
+
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'hi-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    btn.innerText = '⏹️';
+    btn.style.background = '#e74c3c';
+    status.innerText = '🔴 Sun raha hoon... boliye';
+
+    recognition.onresult = function(event) {
+        const transcript = event.results[0][0].transcript;
+        // Put text into Streamlit text input
+        const inputs = window.parent.document.querySelectorAll('input[type=text]');
+        if (inputs.length > 0) {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(inputs[inputs.length-1], transcript);
+            inputs[inputs.length-1].dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        btn.innerText = '🎤';
+        btn.style.background = '#1D9E75';
+        status.innerText = '✅ Suna: "' + transcript + '" — ab Send karein';
+    };
+
+    recognition.onerror = function(event) {
+        btn.innerText = '🎤';
+        btn.style.background = '#1D9E75';
+        status.innerText = '❌ Error: ' + event.error + ' — dobara try karein';
+    };
+
+    recognition.onend = function() {
+        if (btn.innerText === '⏹️') {
+            btn.innerText = '🎤';
+            btn.style.background = '#1D9E75';
+        }
+    };
+
+    recognition.start();
+}
+</script>
+""", unsafe_allow_html=True)
+
 col_in, col_btn = st.columns([5, 1])
 with col_in:
     user_text = st.text_input(
         "input",
-        placeholder="जैसे: Mere tamatar ke patte peele ho rahe hain... / Bahustar kheti kya hoti hai?",
+        placeholder="🎤 Mic se bolein ya yahan likhein...",
         key="user_input",
         label_visibility="collapsed",
     )
