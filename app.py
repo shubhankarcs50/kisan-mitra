@@ -316,7 +316,14 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-    
+ 
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("""
+   
+    """, unsafe_allow_html=True)
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero">
