@@ -6,7 +6,6 @@ import os
 import re
 import tempfile
 import base64
-from gtts import gTTS
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -314,25 +313,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-    <div style='font-size:0.78rem;color:#4a6b5a;line-height:1.7'>
-    <b>Kisan Mitra</b> sirf<br>
-    organic tarike batata hai.<br><br>
-    ✅ Bimari pehchan<br>
-    ✅ Organic upay<br>
-    ✅ Bahustar kheti<br>
-    ✅ Photo se pehchan<br>
-    ✅ Hindi + English<br>
-    ✅ Awaaz mein jawab
-    </div>
+    
     """, unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("""
-    <div style='font-size:0.7rem;color:#888;line-height:1.6'>
-    Built for Connecting Dreams Foundation<br>
-    Round 2 Assignment · June 2026
-    </div>
-    """, unsafe_allow_html=True)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.markdown("""
