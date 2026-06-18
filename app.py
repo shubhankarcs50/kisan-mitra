@@ -4,7 +4,6 @@ from google.genai import types
 from streamlit_mic_recorder import speech_to_text
 import os
 import re
-import tempfile
 import base64
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -204,29 +203,33 @@ def clean_for_tts(text: str) -> str:
     text = re.sub(r'#+\s', '', text)
     return text.strip()
 
-def speak(text: str) -> str:
-    """Convert text to Hindi TTS, return base64 mp3."""
-    try:
-        clean = clean_for_tts(text)[:600]
-        if not clean.strip():
-            return ""
-        tts = gTTS(text=clean, lang='hi', slow=False, tld='co.in')
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        tts.save(tmp.name)
-        tmp.close()
-        with open(tmp.name, "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except Exception as e:
-        st.warning(f"⚠️ Voice output unavailable: {e}")
-        return ""
+def play_audio(text: str):
+    """Use browser's built-in Web Speech API for TTS — no library needed."""
+    if not text:
+        return
+    clean = clean_for_tts(text)[:800]
+    # Escape for JS string
+    clean = clean.replace("\\", "\\\\").replace("`", "\\`").replace("'", "\\'")
+    st.markdown(f"""
+    <script>
+    (function() {{
+        window.speechSynthesis.cancel();
+        var msg = new SpeechSynthesisUtterance(`{clean}`);
+        msg.lang = 'hi-IN';
+        msg.rate = 0.9;
+        msg.pitch = 1.0;
+        msg.volume = 1.0;
+        // Try Hindi voice, fallback to any available
+        var voices = window.speechSynthesis.getVoices();
+        var hindi = voices.find(v => v.lang === 'hi-IN' || v.lang === 'hi');
+        if (hindi) msg.voice = hindi;
+        window.speechSynthesis.speak(msg);
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
 
-def play_audio(b64: str):
-    if b64:
-        st.markdown(
-            f'<audio autoplay controls style="width:100%;margin-top:6px">'
-            f'<source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>',
-            unsafe_allow_html=True
-        )
+def stop_audio():
+    st.markdown("<script>window.speechSynthesis.cancel();</script>", unsafe_allow_html=True)
 
 def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
@@ -314,9 +317,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     
-    """, unsafe_allow_html=True)
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero">
@@ -448,7 +448,6 @@ if final_query or (send and has_image and not user_text):
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
     if st.session_state.tts_on:
-        audio_b64 = speak(reply)
-        play_audio(audio_b64)
+        play_audio(reply)
 
     st.rerun()
