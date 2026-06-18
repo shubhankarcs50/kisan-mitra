@@ -1,6 +1,7 @@
 import streamlit as st
 from google import genai
 from google.genai import types
+from streamlit_mic_recorder import speech_to_text
 import os
 import re
 import tempfile
@@ -139,7 +140,7 @@ def get_client():
     return genai.Client(api_key=key)
 
 client = get_client()
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-2.5-flash"
 
 # ── System prompts ────────────────────────────────────────────────────────────
 DISEASE_PROMPT = """You are Kisan Mitra, a trusted natural farming advisor for Indian farmers transitioning to organic agriculture.
@@ -232,7 +233,7 @@ def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
 
 def ask_kisan_mitra(user_msg: str, mode: str, image_b64: str = None) -> str:
-    """Stream response from Gemini using new google-genai SDK."""
+    """Stream response from Gemini using latest google-genai SDK."""
     system = DISEASE_PROMPT if mode == "disease" else EDUCATION_PROMPT
 
     # Build contents list
@@ -242,16 +243,19 @@ def ask_kisan_mitra(user_msg: str, mode: str, image_b64: str = None) -> str:
     for m in st.session_state.messages[-8:]:
         if isinstance(m.get("content"), str):
             role = "user" if m["role"] == "user" else "model"
-            contents.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+            contents.append(types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=m["content"])]
+            ))
 
     # Build current user parts
     parts = []
     if image_b64:
-        parts.append(types.Part(inline_data=types.Blob(
+        parts.append(types.Part.from_bytes(
+            data=base64.b64decode(image_b64),
             mime_type="image/jpeg",
-            data=base64.b64decode(image_b64)
-        )))
-    parts.append(types.Part(text=user_msg or "Is photo mein kya samasya hai? Organic upay batao."))
+        ))
+    parts.append(types.Part.from_text(text=user_msg or "Is photo mein kya samasya hai? Organic upay batao."))
     contents.append(types.Content(role="user", parts=parts))
 
     # Stream response
@@ -411,82 +415,26 @@ for msg in st.session_state.messages:
         </div>''', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ── Voice Input via Web Speech API ───────────────────────────────────────────
+# Input row
 st.markdown("---")
-st.markdown('<div class="slabel">Awaaz se poochein ya likhein</div>', unsafe_allow_html=True)
+st.markdown('<div class="slabel">Awaaz se bolein ya likhein</div>', unsafe_allow_html=True)
 
-# Inject mic button + Web Speech API JS
-st.markdown("""
-<div style="display:flex; gap:10px; align-items:center; margin-bottom:0.5rem">
-  <button id="micBtn" onclick="startListening()" style="
-      background:#1D9E75; color:white; border:none;
-      border-radius:50%; width:48px; height:48px;
-      font-size:20px; cursor:pointer; flex-shrink:0;
-      box-shadow: 0 2px 8px rgba(29,158,117,0.4)">
-    🎤
-  </button>
-  <div id="micStatus" style="font-size:0.82rem; color:#0f6e56;">
-    Mic button dabayein aur bolein...
-  </div>
-</div>
-
-<script>
-let recognition;
-function startListening() {
-    const btn = document.getElementById('micBtn');
-    const status = document.getElementById('micStatus');
-
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        status.innerText = '❌ Aapka browser voice support nahi karta. Chrome use karein.';
-        return;
-    }
-
-    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'hi-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    btn.innerText = '⏹️';
-    btn.style.background = '#e74c3c';
-    status.innerText = '🔴 Sun raha hoon... boliye';
-
-    recognition.onresult = function(event) {
-        const transcript = event.results[0][0].transcript;
-        // Put text into Streamlit text input
-        const inputs = window.parent.document.querySelectorAll('input[type=text]');
-        if (inputs.length > 0) {
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-            nativeInputValueSetter.call(inputs[inputs.length-1], transcript);
-            inputs[inputs.length-1].dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        btn.innerText = '🎤';
-        btn.style.background = '#1D9E75';
-        status.innerText = '✅ Suna: "' + transcript + '" — ab Send karein';
-    };
-
-    recognition.onerror = function(event) {
-        btn.innerText = '🎤';
-        btn.style.background = '#1D9E75';
-        status.innerText = '❌ Error: ' + event.error + ' — dobara try karein';
-    };
-
-    recognition.onend = function() {
-        if (btn.innerText === '⏹️') {
-            btn.innerText = '🎤';
-            btn.style.background = '#1D9E75';
-        }
-    };
-
-    recognition.start();
-}
-</script>
-""", unsafe_allow_html=True)
+# Voice input using streamlit-mic-recorder
+voice_text = speech_to_text(
+    language="hi",
+    start_prompt="🎤 Mic dabao aur bolein",
+    stop_prompt="⏹️ Roko",
+    just_once=True,
+    use_container_width=True,
+    key="mic_input",
+)
 
 col_in, col_btn = st.columns([5, 1])
 with col_in:
     user_text = st.text_input(
         "input",
-        placeholder="🎤 Mic se bolein ya yahan likhein...",
+        value=voice_text if voice_text else "",
+        placeholder="🎤 Upar mic use karein ya yahan likhein...",
         key="user_input",
         label_visibility="collapsed",
     )
@@ -494,7 +442,7 @@ with col_btn:
     send = st.button("भेजें →", type="primary", use_container_width=True)
 
 # ── Process ───────────────────────────────────────────────────────────────────
-final_query = triggered or (user_text if send and user_text else None)
+final_query = triggered or voice_text or (user_text if send and user_text else None)
 has_image = uploaded_img is not None
 
 if final_query or (send and has_image and not user_text):
