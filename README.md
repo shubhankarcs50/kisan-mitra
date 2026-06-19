@@ -2,11 +2,6 @@
 
 > A voice-enabled AI assistant helping Indian farmers transition to natural and organic farming through crop disease identification and multilevel farming education.
 
-**Built for:** Connecting Dreams Foundation — Round 2 Technical Assignment  
-**Live Demo:** [Deploy link here after Streamlit Cloud deploy]  
-**Video Walkthrough:** [Loom link here]
-
----
 
 ## 🎯 Problem Statement
 
