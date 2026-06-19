@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 from google.genai import types
 from streamlit_mic_recorder import speech_to_text
@@ -207,102 +208,70 @@ def clean_for_tts(text: str) -> str:
     return text.strip()
 
 def play_audio(text: str, msg_index: int):
-    """
-    Listen button with a large, unmissable error banner if anything fails.
-
-    The spoken text is passed to JS as base64, then decoded with atob() +
-    decodeURIComponent inside the script. This avoids ALL string-escaping
-    bugs (backticks, newlines, quotes, markdown symbols) that broke the
-    previous version when the AI's reply contained numbered lists or
-    multi-line text — those raw characters were corrupting the JS
-    template literal and causing the browser to print the script as
-    plain text instead of executing it.
-    """
+    """Bulletproof TTS button — runs speechSynthesis inside components.html's
+    own iframe (which DOES have full Web Speech permissions), shows errors
+    inline, and waits for voices to load if needed."""
     if not text:
         return
     clean = clean_for_tts(text)[:800]
-    # UTF-8 safe base64 encoding (handles Hindi/Devanagari correctly)
     b64_text = base64.b64encode(clean.encode("utf-8")).decode("ascii")
 
-    btn_id = f"ttsBtn{msg_index}"
-    status_id = f"ttsStatus{msg_index}"
+    components.html(f"""
+    <div style="font-family:sans-serif">
+      <button id="btn{msg_index}" style="background:#1D9E75;color:#fff;border:none;
+        border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;">
+        🔊 Jawab Sunein
+      </button>
+      <div id="s{msg_index}" style="margin-top:6px;font-size:12px;color:#0f6e56;"></div>
+    </div>
+    <script>
+      var statusEl = document.getElementById('s{msg_index}');
+      var btnEl = document.getElementById('btn{msg_index}');
+      var spokenText = decodeURIComponent(escape(window.atob('{b64_text}')));
 
-    st.markdown(f"""
-<button id="{btn_id}" style="
-    background:#1D9E75;color:#fff;border:none;border-radius:8px;
-    padding:7px 14px;font-size:12px;cursor:pointer;margin-top:4px;">
-  🔊 Jawab Sunein
-</button>
-<div id="{status_id}" style="
-    margin-top:6px; padding:8px 12px; border-radius:8px;
-    font-size:13px; font-weight:600; display:none;"></div>
-<script>
-(function() {{
-    var btn = document.getElementById("{btn_id}");
-    var status = document.getElementById("{status_id}");
-    if (!btn) return;
-
-    var encoded = "{b64_text}";
-    var spokenText = decodeURIComponent(escape(atob(encoded)));
-
-    function showStatus(msgText, isError) {{
-        status.style.display = "block";
-        status.innerText = msgText;
-        status.style.background = isError ? "#FCEBEB" : "#E1F5EE";
-        status.style.color = isError ? "#791F1F" : "#085041";
-        status.style.border = "1px solid " + (isError ? "#F09595" : "#5DCAA5");
-    }}
-
-    btn.addEventListener("click", function() {{
-        var topWin = window.top;
-        if (!topWin || !topWin.speechSynthesis) {{
-            showStatus("PROBLEM FOUND: No speechSynthesis API in this browser.", true);
-            return;
-        }}
-        if (topWin.speechSynthesis.speaking) {{
-            topWin.speechSynthesis.cancel();
-            btn.innerText = "🔊 Jawab Sunein";
-            showStatus("Stopped.", false);
-            return;
-        }}
+      function doSpeak() {{
         try {{
-            topWin.speechSynthesis.cancel();
-            var utter = new topWin.SpeechSynthesisUtterance(spokenText);
-            utter.lang = "hi-IN";
-            utter.rate = 0.92;
+          if (!('speechSynthesis' in window)) {{
+            statusEl.innerText = '❌ Browser voice support nahi karta';
+            return;
+          }}
+          window.speechSynthesis.cancel();
+          var u = new SpeechSynthesisUtterance(spokenText);
+          u.lang = 'hi-IN';
+          u.rate = 0.95;
+          u.volume = 1;
 
-            var voices = topWin.speechSynthesis.getVoices();
-            showStatus("Voices found: " + voices.length + ". Attempting to speak...", false);
-
-            var hindi = null;
-            for (var i = 0; i < voices.length; i++) {{
-                if (voices[i].lang === "hi-IN") {{ hindi = voices[i]; break; }}
+          var voices = window.speechSynthesis.getVoices();
+          for (var i = 0; i < voices.length; i++) {{
+            if (voices[i].lang && voices[i].lang.indexOf('hi') === 0) {{
+              u.voice = voices[i];
+              break;
             }}
-            if (!hindi) {{
-                for (var j = 0; j < voices.length; j++) {{
-                    if (voices[j].lang.indexOf("hi") === 0) {{ hindi = voices[j]; break; }}
-                }}
-            }}
-            if (hindi) utter.voice = hindi;
+          }}
 
-            utter.onstart = function() {{ showStatus("PLAYING NOW — check volume if silent.", false); btn.innerText = "⏸ Rokein"; }};
-            utter.onend   = function() {{ showStatus("Finished playing.", false); btn.innerText = "🔊 Jawab Sunein"; }};
-            utter.onerror = function(e) {{ showStatus("PROBLEM FOUND: speechSynthesis error = \\"" + e.error + "\\"", true); }};
+          u.onstart = function() {{ statusEl.innerText = '🔊 Bol raha hai...'; }};
+          u.onend = function() {{ statusEl.innerText = '✅ Khatam'; }};
+          u.onerror = function(e) {{ statusEl.innerText = '❌ Error: ' + e.error; }};
 
-            topWin.speechSynthesis.speak(utter);
-
-            setTimeout(function() {{
-                if (!topWin.speechSynthesis.speaking && !topWin.speechSynthesis.pending) {{
-                    showStatus("PROBLEM FOUND: speak() called but playback never started (silently blocked).", true);
-                }}
-            }}, 1500);
-        }} catch (err) {{
-            showStatus("PROBLEM FOUND: JS exception = \\"" + err.message + "\\"", true);
+          window.speechSynthesis.speak(u);
+          statusEl.innerText = '🔊 Bol raha hai...';
+        }} catch(err) {{
+          statusEl.innerText = '❌ JS error: ' + err.message;
         }}
-    }});
-}})();
-</script>
-""", unsafe_allow_html=True)
+      }}
+
+      btnEl.onclick = function() {{
+        if (window.speechSynthesis.getVoices().length === 0) {{
+          statusEl.innerText = '⏳ Voices load ho rahi hain...';
+          window.speechSynthesis.onvoiceschanged = doSpeak;
+          // Force a kick in case event never fires
+          setTimeout(doSpeak, 300);
+        }} else {{
+          doSpeak();
+        }}
+      }};
+    </script>
+    """, height=70)
 
 def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
@@ -542,5 +511,3 @@ if final_query or (send and has_image and not user_text):
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
     st.rerun()
-
-
