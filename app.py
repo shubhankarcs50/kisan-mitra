@@ -197,84 +197,112 @@ KEY TOPICS: 4-tier agroforestry, companion planting (saathi fasal), trap crops, 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def clean_for_tts(text: str) -> str:
     """Strip markdown and emoji for clean TTS."""
-    text = re.sub(r'[🔍🌿⚠️📅📚🌱💰🗓️✅❌🌾]', '', text)
+    text = re.sub(r'[🔍🌿⚠️📅📚🌱💰🗓️✅❌🌾🔊⏸️▶️]', '', text)
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'\*(.*?)\*', r'\1', text)
     text = re.sub(r'#+\s', '', text)
+    text = re.sub(r'^\s*\d+\.\s*', '', text, flags=re.MULTILINE)  # numbered lists "1. "
+    text = re.sub(r'^\s*[-•]\s*', '', text, flags=re.MULTILINE)   # bullet lists
+    text = re.sub(r'\s+', ' ', text)  # collapse newlines/whitespace into single spaces
     return text.strip()
 
 def play_audio(text: str, msg_index: int):
     """
-    Render a 'Sunein' button that triggers speechSynthesis in the TOP-LEVEL
-    browser window (window.top), not inside any sandboxed iframe.
+    Listen button with a large, unmissable error banner if anything fails.
 
-    Why: both st.markdown's iframe and components.html's iframe carry
-    'allow-scripts allow-same-origin' sandbox flags. Chrome's own warning
-    ("can escape its sandboxing") means it clamps what that sandboxed
-    context can do at runtime — including treating clicks inside it as
-    real user-activation for speechSynthesis. Calling window.top.speechSynthesis
-    from a click that bubbles to window.top sidesteps the sandbox entirely.
+    The spoken text is passed to JS as base64, then decoded with atob() +
+    decodeURIComponent inside the script. This avoids ALL string-escaping
+    bugs (backticks, newlines, quotes, markdown symbols) that broke the
+    previous version when the AI's reply contained numbered lists or
+    multi-line text — those raw characters were corrupting the JS
+    template literal and causing the browser to print the script as
+    plain text instead of executing it.
     """
     if not text:
         return
     clean = clean_for_tts(text)[:800]
-    clean = clean.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
+    # UTF-8 safe base64 encoding (handles Hindi/Devanagari correctly)
+    b64_text = base64.b64encode(clean.encode("utf-8")).decode("ascii")
 
     btn_id = f"ttsBtn{msg_index}"
     status_id = f"ttsStatus{msg_index}"
 
     st.markdown(f"""
-    <button id="{btn_id}" style="
-        background:#1D9E75;color:#fff;border:none;border-radius:8px;
-        padding:7px 14px;font-size:12px;cursor:pointer;margin-top:4px;">
-      🔊 Jawab Sunein
-    </button>
-    <span id="{status_id}" style="margin-left:8px;font-size:11px;color:#0f6e56;"></span>
-    <script>
-    (function() {{
-        var btn = document.getElementById('{btn_id}');
-        var status = document.getElementById('{status_id}');
-        if (!btn) return;
+<button id="{btn_id}" style="
+    background:#1D9E75;color:#fff;border:none;border-radius:8px;
+    padding:7px 14px;font-size:12px;cursor:pointer;margin-top:4px;">
+  🔊 Jawab Sunein
+</button>
+<div id="{status_id}" style="
+    margin-top:6px; padding:8px 12px; border-radius:8px;
+    font-size:13px; font-weight:600; display:none;"></div>
+<script>
+(function() {{
+    var btn = document.getElementById("{btn_id}");
+    var status = document.getElementById("{status_id}");
+    if (!btn) return;
 
-        // Use window.top so speech runs outside any sandboxed iframe
+    var encoded = "{b64_text}";
+    var spokenText = decodeURIComponent(escape(atob(encoded)));
+
+    function showStatus(msgText, isError) {{
+        status.style.display = "block";
+        status.innerText = msgText;
+        status.style.background = isError ? "#FCEBEB" : "#E1F5EE";
+        status.style.color = isError ? "#791F1F" : "#085041";
+        status.style.border = "1px solid " + (isError ? "#F09595" : "#5DCAA5");
+    }}
+
+    btn.addEventListener("click", function() {{
         var topWin = window.top;
+        if (!topWin || !topWin.speechSynthesis) {{
+            showStatus("PROBLEM FOUND: No speechSynthesis API in this browser.", true);
+            return;
+        }}
+        if (topWin.speechSynthesis.speaking) {{
+            topWin.speechSynthesis.cancel();
+            btn.innerText = "🔊 Jawab Sunein";
+            showStatus("Stopped.", false);
+            return;
+        }}
+        try {{
+            topWin.speechSynthesis.cancel();
+            var utter = new topWin.SpeechSynthesisUtterance(spokenText);
+            utter.lang = "hi-IN";
+            utter.rate = 0.92;
 
-        btn.addEventListener('click', function() {{
-            try {{
-                if (!topWin.speechSynthesis) {{
-                    status.innerText = '❌ Voice not supported';
-                    return;
-                }}
-                if (topWin.speechSynthesis.speaking) {{
-                    topWin.speechSynthesis.cancel();
-                    btn.innerText = '🔊 Jawab Sunein';
-                    status.innerText = '⏹ Roka gaya';
-                    return;
-                }}
-                topWin.speechSynthesis.cancel();
-                var utter = new topWin.SpeechSynthesisUtterance(`{clean}`);
-                utter.lang = 'hi-IN';
-                utter.rate = 0.92;
-                utter.pitch = 1.0;
-                utter.volume = 1.0;
+            var voices = topWin.speechSynthesis.getVoices();
+            showStatus("Voices found: " + voices.length + ". Attempting to speak...", false);
 
-                var voices = topWin.speechSynthesis.getVoices();
-                var hindi = voices.find(function(v) {{ return v.lang === 'hi-IN'; }}) ||
-                            voices.find(function(v) {{ return v.lang.indexOf('hi') === 0; }});
-                if (hindi) utter.voice = hindi;
-
-                utter.onstart = function() {{ status.innerText = '🔊 Bol raha hoon...'; btn.innerText = '⏸ Rokein'; }};
-                utter.onend   = function() {{ status.innerText = '✅ Khatam'; btn.innerText = '🔊 Jawab Sunein'; }};
-                utter.onerror = function(e) {{ status.innerText = '❌ Error: ' + e.error; }};
-
-                topWin.speechSynthesis.speak(utter);
-            }} catch (err) {{
-                status.innerText = '❌ ' + err.message;
+            var hindi = null;
+            for (var i = 0; i < voices.length; i++) {{
+                if (voices[i].lang === "hi-IN") {{ hindi = voices[i]; break; }}
             }}
-        }});
-    }})();
-    </script>
-    """, unsafe_allow_html=True)
+            if (!hindi) {{
+                for (var j = 0; j < voices.length; j++) {{
+                    if (voices[j].lang.indexOf("hi") === 0) {{ hindi = voices[j]; break; }}
+                }}
+            }}
+            if (hindi) utter.voice = hindi;
+
+            utter.onstart = function() {{ showStatus("PLAYING NOW — check volume if silent.", false); btn.innerText = "⏸ Rokein"; }};
+            utter.onend   = function() {{ showStatus("Finished playing.", false); btn.innerText = "🔊 Jawab Sunein"; }};
+            utter.onerror = function(e) {{ showStatus("PROBLEM FOUND: speechSynthesis error = \\"" + e.error + "\\"", true); }};
+
+            topWin.speechSynthesis.speak(utter);
+
+            setTimeout(function() {{
+                if (!topWin.speechSynthesis.speaking && !topWin.speechSynthesis.pending) {{
+                    showStatus("PROBLEM FOUND: speak() called but playback never started (silently blocked).", true);
+                }}
+            }}, 1500);
+        }} catch (err) {{
+            showStatus("PROBLEM FOUND: JS exception = \\"" + err.message + "\\"", true);
+        }}
+    }});
+}})();
+</script>
+""", unsafe_allow_html=True)
 
 def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
@@ -514,3 +542,5 @@ if final_query or (send and has_image and not user_text):
     st.session_state.messages.append({"role": "assistant", "content": reply})
 
     st.rerun()
+
+
