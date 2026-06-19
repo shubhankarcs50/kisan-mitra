@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 from google.genai import types
 from streamlit_mic_recorder import speech_to_text
@@ -203,33 +204,73 @@ def clean_for_tts(text: str) -> str:
     text = re.sub(r'#+\s', '', text)
     return text.strip()
 
-def play_audio(text: str):
-    """Use browser's built-in Web Speech API for TTS — no library needed."""
+def play_audio(text: str, key: str = "tts"):
+    """
+    Render a 'Sunein' (Listen) button using a real HTML component.
+    components.html gets a properly permissioned iframe (unlike st.markdown
+    script injection, which gets silently blocked for speechSynthesis).
+    A real click inside this iframe satisfies the browser's user-gesture
+    requirement for audio, so playback is reliable.
+    """
     if not text:
         return
     clean = clean_for_tts(text)[:800]
-    # Escape for JS string
-    clean = clean.replace("\\", "\\\\").replace("`", "\\`").replace("'", "\\'")
-    st.markdown(f"""
-    <script>
-    (function() {{
-        window.speechSynthesis.cancel();
-        var msg = new SpeechSynthesisUtterance(`{clean}`);
-        msg.lang = 'hi-IN';
-        msg.rate = 0.9;
-        msg.pitch = 1.0;
-        msg.volume = 1.0;
-        // Try Hindi voice, fallback to any available
-        var voices = window.speechSynthesis.getVoices();
-        var hindi = voices.find(v => v.lang === 'hi-IN' || v.lang === 'hi');
-        if (hindi) msg.voice = hindi;
-        window.speechSynthesis.speak(msg);
-    }})();
-    </script>
-    """, unsafe_allow_html=True)
+    clean = clean.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
 
-def stop_audio():
-    st.markdown("<script>window.speechSynthesis.cancel();</script>", unsafe_allow_html=True)
+    components.html(f"""
+    <div style="font-family:'Noto Sans',sans-serif">
+      <button id="playBtn" style="
+          background:#1D9E75;color:#fff;border:none;border-radius:8px;
+          padding:8px 16px;font-size:13px;cursor:pointer;display:flex;
+          align-items:center;gap:6px;">
+        🔊 Jawab Sunein
+      </button>
+      <span id="ttsStatus" style="margin-left:10px;font-size:12px;color:#0f6e56;"></span>
+    </div>
+    <script>
+      const btn = document.getElementById('playBtn');
+      const status = document.getElementById('ttsStatus');
+      const text = `{clean}`;
+
+      function speakNow() {{
+        if (!window.speechSynthesis) {{
+          status.innerText = '❌ Is browser mein voice support nahi hai';
+          return;
+        }}
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'hi-IN';
+        utter.rate = 0.92;
+        utter.pitch = 1.0;
+        utter.volume = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        const hindiVoice = voices.find(v => v.lang === 'hi-IN') || voices.find(v => v.lang.startsWith('hi'));
+        if (hindiVoice) utter.voice = hindiVoice;
+
+        utter.onstart = () => {{ status.innerText = '🔊 Bol raha hoon...'; btn.innerText = '⏸ Rokein'; }};
+        utter.onend   = () => {{ status.innerText = '✅ Khatam'; btn.innerText = '🔊 Jawab Sunein'; }};
+        utter.onerror = (e) => {{ status.innerText = '❌ Error: ' + e.error; }};
+
+        window.speechSynthesis.speak(utter);
+      }}
+
+      btn.addEventListener('click', function() {{
+        if (window.speechSynthesis.speaking) {{
+          window.speechSynthesis.cancel();
+          btn.innerText = '🔊 Jawab Sunein';
+          status.innerText = '⏹ Roka gaya';
+        }} else {{
+          // Voices may load async on first use — wait if list is empty
+          if (window.speechSynthesis.getVoices().length === 0) {{
+            window.speechSynthesis.onvoiceschanged = speakNow;
+          }} else {{
+            speakNow();
+          }}
+        }}
+      }});
+    </script>
+    """, height=50)
 
 def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
@@ -307,7 +348,7 @@ with st.sidebar:
     st.session_state.mode = mode
 
     st.markdown("---")
-    st.session_state.tts_on = st.toggle("🔊 Voice jawab sunein", value=st.session_state.tts_on)
+    st.session_state.tts_on = st.toggle("🔊 Sunein button dikhayein", value=st.session_state.tts_on)
 
     st.markdown("---")
     if st.button("🗑️ Nayi baat shuru karein", use_container_width=True):
@@ -316,12 +357,24 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
- 
+    <div style='font-size:0.78rem;color:#4a6b5a;line-height:1.7'>
+    <b>Kisan Mitra</b> sirf<br>
+    organic tarike batata hai.<br><br>
+    ✅ Bimari pehchan<br>
+    ✅ Organic upay<br>
+    ✅ Bahustar kheti<br>
+    ✅ Photo se pehchan<br>
+    ✅ Hindi + English<br>
+    ✅ Awaaz mein jawab
+    </div>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
-   
+    <div style='font-size:0.7rem;color:#888;line-height:1.6'>
+    Built for Connecting Dreams Foundation<br>
+    Round 2 Assignment · June 2026
+    </div>
     """, unsafe_allow_html=True)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
