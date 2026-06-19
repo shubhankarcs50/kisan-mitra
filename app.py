@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 from google import genai
 from google.genai import types
 from streamlit_mic_recorder import speech_to_text
@@ -204,73 +203,78 @@ def clean_for_tts(text: str) -> str:
     text = re.sub(r'#+\s', '', text)
     return text.strip()
 
-def play_audio(text: str, key: str = "tts"):
+def play_audio(text: str, msg_index: int):
     """
-    Render a 'Sunein' (Listen) button using a real HTML component.
-    components.html gets a properly permissioned iframe (unlike st.markdown
-    script injection, which gets silently blocked for speechSynthesis).
-    A real click inside this iframe satisfies the browser's user-gesture
-    requirement for audio, so playback is reliable.
+    Render a 'Sunein' button that triggers speechSynthesis in the TOP-LEVEL
+    browser window (window.top), not inside any sandboxed iframe.
+
+    Why: both st.markdown's iframe and components.html's iframe carry
+    'allow-scripts allow-same-origin' sandbox flags. Chrome's own warning
+    ("can escape its sandboxing") means it clamps what that sandboxed
+    context can do at runtime — including treating clicks inside it as
+    real user-activation for speechSynthesis. Calling window.top.speechSynthesis
+    from a click that bubbles to window.top sidesteps the sandbox entirely.
     """
     if not text:
         return
     clean = clean_for_tts(text)[:800]
     clean = clean.replace("\\", "\\\\").replace("`", "\\`").replace("</", "<\\/")
 
-    components.html(f"""
-    <div style="font-family:'Noto Sans',sans-serif">
-      <button id="playBtn" style="
-          background:#1D9E75;color:#fff;border:none;border-radius:8px;
-          padding:8px 16px;font-size:13px;cursor:pointer;display:flex;
-          align-items:center;gap:6px;">
-        🔊 Jawab Sunein
-      </button>
-      <span id="ttsStatus" style="margin-left:10px;font-size:12px;color:#0f6e56;"></span>
-    </div>
+    btn_id = f"ttsBtn{msg_index}"
+    status_id = f"ttsStatus{msg_index}"
+
+    st.markdown(f"""
+    <button id="{btn_id}" style="
+        background:#1D9E75;color:#fff;border:none;border-radius:8px;
+        padding:7px 14px;font-size:12px;cursor:pointer;margin-top:4px;">
+      🔊 Jawab Sunein
+    </button>
+    <span id="{status_id}" style="margin-left:8px;font-size:11px;color:#0f6e56;"></span>
     <script>
-      const btn = document.getElementById('playBtn');
-      const status = document.getElementById('ttsStatus');
-      const text = `{clean}`;
+    (function() {{
+        var btn = document.getElementById('{btn_id}');
+        var status = document.getElementById('{status_id}');
+        if (!btn) return;
 
-      function speakNow() {{
-        if (!window.speechSynthesis) {{
-          status.innerText = '❌ Is browser mein voice support nahi hai';
-          return;
-        }}
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'hi-IN';
-        utter.rate = 0.92;
-        utter.pitch = 1.0;
-        utter.volume = 1.0;
+        // Use window.top so speech runs outside any sandboxed iframe
+        var topWin = window.top;
 
-        const voices = window.speechSynthesis.getVoices();
-        const hindiVoice = voices.find(v => v.lang === 'hi-IN') || voices.find(v => v.lang.startsWith('hi'));
-        if (hindiVoice) utter.voice = hindiVoice;
+        btn.addEventListener('click', function() {{
+            try {{
+                if (!topWin.speechSynthesis) {{
+                    status.innerText = '❌ Voice not supported';
+                    return;
+                }}
+                if (topWin.speechSynthesis.speaking) {{
+                    topWin.speechSynthesis.cancel();
+                    btn.innerText = '🔊 Jawab Sunein';
+                    status.innerText = '⏹ Roka gaya';
+                    return;
+                }}
+                topWin.speechSynthesis.cancel();
+                var utter = new topWin.SpeechSynthesisUtterance(`{clean}`);
+                utter.lang = 'hi-IN';
+                utter.rate = 0.92;
+                utter.pitch = 1.0;
+                utter.volume = 1.0;
 
-        utter.onstart = () => {{ status.innerText = '🔊 Bol raha hoon...'; btn.innerText = '⏸ Rokein'; }};
-        utter.onend   = () => {{ status.innerText = '✅ Khatam'; btn.innerText = '🔊 Jawab Sunein'; }};
-        utter.onerror = (e) => {{ status.innerText = '❌ Error: ' + e.error; }};
+                var voices = topWin.speechSynthesis.getVoices();
+                var hindi = voices.find(function(v) {{ return v.lang === 'hi-IN'; }}) ||
+                            voices.find(function(v) {{ return v.lang.indexOf('hi') === 0; }});
+                if (hindi) utter.voice = hindi;
 
-        window.speechSynthesis.speak(utter);
-      }}
+                utter.onstart = function() {{ status.innerText = '🔊 Bol raha hoon...'; btn.innerText = '⏸ Rokein'; }};
+                utter.onend   = function() {{ status.innerText = '✅ Khatam'; btn.innerText = '🔊 Jawab Sunein'; }};
+                utter.onerror = function(e) {{ status.innerText = '❌ Error: ' + e.error; }};
 
-      btn.addEventListener('click', function() {{
-        if (window.speechSynthesis.speaking) {{
-          window.speechSynthesis.cancel();
-          btn.innerText = '🔊 Jawab Sunein';
-          status.innerText = '⏹ Roka gaya';
-        }} else {{
-          // Voices may load async on first use — wait if list is empty
-          if (window.speechSynthesis.getVoices().length === 0) {{
-            window.speechSynthesis.onvoiceschanged = speakNow;
-          }} else {{
-            speakNow();
-          }}
-        }}
-      }});
+                topWin.speechSynthesis.speak(utter);
+            }} catch (err) {{
+                status.innerText = '❌ ' + err.message;
+            }}
+        }});
+    }})();
     </script>
-    """, height=50)
+    """, unsafe_allow_html=True)
 
 def image_to_base64(uploaded_file) -> str:
     return base64.standard_b64encode(uploaded_file.read()).decode("utf-8")
@@ -438,7 +442,7 @@ if not st.session_state.messages:
     """, unsafe_allow_html=True)
 
 st.markdown('<div class="chat-wrap">', unsafe_allow_html=True)
-for msg in st.session_state.messages:
+for i, msg in enumerate(st.session_state.messages):
     if msg["role"] == "user":
         display = msg["content"] if isinstance(msg["content"], str) else "[Photo + query]"
         st.markdown(f'''
@@ -456,6 +460,8 @@ for msg in st.session_state.messages:
             <div class="bubble bubble-bot">{msg["content"]}</div>
           </div>
         </div>''', unsafe_allow_html=True)
+        if st.session_state.tts_on:
+            play_audio(msg["content"], i)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Input row
@@ -506,8 +512,5 @@ if final_query or (send and has_image and not user_text):
         st.markdown('</div></div>', unsafe_allow_html=True)
 
     st.session_state.messages.append({"role": "assistant", "content": reply})
-
-    if st.session_state.tts_on:
-        play_audio(reply)
 
     st.rerun()
