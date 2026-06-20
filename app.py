@@ -360,24 +360,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-    <div style='font-size:0.78rem;color:#4a6b5a;line-height:1.7'>
-    <b>Kisan Mitra</b> sirf<br>
-    organic tarike batata hai.<br><br>
-    ✅ Bimari pehchan<br>
-    ✅ Organic upay<br>
-    ✅ Bahustar kheti<br>
-    ✅ Photo se pehchan<br>
-    ✅ Hindi + English<br>
-    ✅ Awaaz mein jawab
-    </div>
+    
     """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
-    <div style='font-size:0.7rem;color:#888;line-height:1.6'>
-    Built for Connecting Dreams Foundation<br>
-    Round 2 Assignment · June 2026
-    </div>
+   
     """, unsafe_allow_html=True)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -388,18 +376,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Fallback mode switcher (always visible, doesn't depend on sidebar)
-mode_col1, mode_col2 = st.columns(2)
-with mode_col1:
-    if st.button("🔍 Bimari Pehchan", use_container_width=True,
-                 type="primary" if st.session_state.mode == "disease" else "secondary"):
-        st.session_state.mode = "disease"
-        st.rerun()
-with mode_col2:
-    if st.button("📚 Kheti Sikho", use_container_width=True,
-                 type="primary" if st.session_state.mode == "education" else "secondary"):
-        st.session_state.mode = "education"
-        st.rerun()
+
 
 # Mode badge + tip
 if st.session_state.mode == "disease":
