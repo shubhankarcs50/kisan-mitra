@@ -127,7 +127,9 @@ html, body, [class*="css"] {
 }
 
 /* ── Streamlit default cleanup ── */
-#MainMenu, footer, header { visibility:hidden; }
+#MainMenu, footer { visibility:hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+header[data-testid="stHeader"] button[kind="header"] { visibility: visible !important; }
 .block-container { padding-top:1.2rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -139,7 +141,7 @@ def get_client():
     return genai.Client(api_key=key)
 
 client = get_client()
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-flash-lite"
 
 # ── System prompts ────────────────────────────────────────────────────────────
 DISEASE_PROMPT = """You are Kisan Mitra, a trusted natural farming advisor for Indian farmers transitioning to organic agriculture.
@@ -358,12 +360,24 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("""
-  
+    <div style='font-size:0.78rem;color:#4a6b5a;line-height:1.7'>
+    <b>Kisan Mitra</b> sirf<br>
+    organic tarike batata hai.<br><br>
+    ✅ Bimari pehchan<br>
+    ✅ Organic upay<br>
+    ✅ Bahustar kheti<br>
+    ✅ Photo se pehchan<br>
+    ✅ Hindi + English<br>
+    ✅ Awaaz mein jawab
+    </div>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("""
-
+    <div style='font-size:0.7rem;color:#888;line-height:1.6'>
+    Built for Connecting Dreams Foundation<br>
+    Round 2 Assignment · June 2026
+    </div>
     """, unsafe_allow_html=True)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -373,6 +387,19 @@ st.markdown("""
   <p>Aapka bharosemand natural farming sahayak — organic upay, bahustar kheti, aur prakritik gyaan</p>
 </div>
 """, unsafe_allow_html=True)
+
+# Fallback mode switcher (always visible, doesn't depend on sidebar)
+mode_col1, mode_col2 = st.columns(2)
+with mode_col1:
+    if st.button("🔍 Bimari Pehchan", use_container_width=True,
+                 type="primary" if st.session_state.mode == "disease" else "secondary"):
+        st.session_state.mode = "disease"
+        st.rerun()
+with mode_col2:
+    if st.button("📚 Kheti Sikho", use_container_width=True,
+                 type="primary" if st.session_state.mode == "education" else "secondary"):
+        st.session_state.mode = "education"
+        st.rerun()
 
 # Mode badge + tip
 if st.session_state.mode == "disease":
